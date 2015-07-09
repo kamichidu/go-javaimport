@@ -7,7 +7,6 @@ import (
 	"github.com/k0kubun/pp"
 	jireg "github.com/kamichidu/go-javaimport/regexp"
 	"github.com/kamichidu/go-jclass"
-	"io"
 	"log"
 	"os"
 	"path/filepath"
@@ -100,35 +99,7 @@ func (self *PathFilter) Apply(path string) bool {
 	return true
 }
 
-type FieldInfo struct {
-	Name      string      `json:"name"`
-	Type      string      `json:"type"`
-	Value     interface{} `json:"value"`
-	Public    bool        `json:"public"`
-	Protected bool        `json:"protected"`
-	Private   bool        `json:"private"`
-}
-
-type MethodInfo struct {
-	Name           string   `json:"name"`
-	ParameterTypes []string `json:"parameter_types"`
-	ReturnType     string   `json:"return_type"`
-	ThrowTypes     []string `json:"throw_types"`
-	Public         bool     `json:"public"`
-	Protected      bool     `json:"protected"`
-	Private        bool     `json:"private"`
-}
-
-type TypeInfo struct {
-	Name      string        `json:"name"`
-	Fields    []*FieldInfo  `json:"fields"`
-	Methods   []*MethodInfo `json:"methods"`
-	Public    bool          `json:"public"`
-	Protected bool          `json:"protected"`
-	Private   bool          `json:"private"`
-}
-
-func ParseWithLfs(root string, filename string) (*TypeInfo, error) {
+func ParseWithLfs(root string, filename string) (*jclass.JClass, error) {
 	abspath := filepath.Join(root, filename)
 
 	r, err := os.Open(abspath)
@@ -137,73 +108,27 @@ func ParseWithLfs(root string, filename string) (*TypeInfo, error) {
 	}
 	defer r.Close()
 
-	info, err := ParseFile(r)
-	if err != nil {
-		return nil, err
-	}
-
-	return info, nil
+	return jclass.NewJClass(r)
 }
 
-func ParseWithJar(filename string, zf *zip.File) (*TypeInfo, error) {
+func ParseWithJar(filename string, zf *zip.File) (*jclass.JClass, error) {
 	r, err := zf.Open()
 	if err != nil {
 		return nil, err
 	}
 	defer r.Close()
 
-	info, err := ParseFile(r)
-	if err != nil {
-		return nil, err
-	}
-
-	return info, err
+	return jclass.NewJClass(r)
 }
 
-func ParseFile(in io.Reader) (*TypeInfo, error) {
-	jc, err := jclass.NewJClass(in)
-	if err != nil {
-		return nil, err
+func write(jc *jclass.JClass) {
+	if *current == jc.GetPackageName() {
+		return
 	}
-
-	info := &TypeInfo{}
-	info.Name = jc.GetClassName()
-	// TODO
-	info.Public = (jc.GetAccessFlags() | 0x0) == 0x0
-	info.Protected = (jc.GetAccessFlags() | 0x0) == 0x0
-	info.Private = (jc.GetAccessFlags() | 0x0) == 0x0
-	for _, jf := range jc.GetFields() {
-		info.Fields = append(info.Fields, &FieldInfo{
-			Name:      jf.GetName(),
-			Type:      jf.GetType(),
-			Value:     fmt.Sprint("%v", jf.GetConstantValue()),
-			Public:    (jf.GetAccessFlags() | 0x0) == 0x0,
-			Protected: (jf.GetAccessFlags() | 0x0) == 0x0,
-			Private:   (jf.GetAccessFlags() | 0x0) == 0x0,
-		})
+	if !jc.IsPublic() {
+		return
 	}
-	for _, jm := range jc.GetMethods() {
-		info.Methods = append(info.Methods, &MethodInfo{
-			Name:           jm.GetName(),
-			ReturnType:     jm.GetReturnType(),
-			ParameterTypes: jm.GetParameterTypes(),
-			ThrowTypes:     make([]string, 0),
-			Public:         (jm.GetAccessFlags() | 0x0) == 0x0,
-			Protected:      (jm.GetAccessFlags() | 0x0) == 0x0,
-			Private:        (jm.GetAccessFlags() | 0x0) == 0x0,
-		})
-	}
-	return info, nil
-}
-
-func write(info *TypeInfo) {
-	fmt.Println(info.Name)
-	// bytes, err := json.Marshal(info)
-	// if err != nil {
-	// 	pp.Fprintln(os.Stderr, info)
-	// 	panic(err)
-	// }
-	// fmt.Println(string(bytes))
+	fmt.Println(jc.GetCanonicalName())
 }
 
 func runWithLfs(path string, filter *PathFilter) {
@@ -219,7 +144,7 @@ func runWithLfs(path string, filter *PathFilter) {
 		relpath = strings.Replace(relpath, "\\", "/", -1)
 
 		if !filter.Apply(relpath) {
-            return nil
+			return nil
 		}
 
 		typeInfo, err := ParseWithLfs(path, relpath)
@@ -289,7 +214,7 @@ func javaimportMain() int {
 		go func(path string) {
 			defer wg.Done()
 
-			if *profile {
+			if *debug {
 				fmt.Fprintf(os.Stderr, "Start %s\n", path)
 			}
 			start := time.Now()
@@ -302,7 +227,7 @@ func javaimportMain() int {
 				runWithLfs(path, filter)
 			}
 			duration := time.Now().Sub(start)
-			if *profile {
+			if *debug {
 				fmt.Fprintf(os.Stderr, "Parsing %s requires %.09f [s]\n", path, duration.Seconds())
 			}
 		}(path)
@@ -310,7 +235,7 @@ func javaimportMain() int {
 	wg.Wait()
 	allDuration := time.Now().Sub(allStart)
 
-	if *profile {
+	if *debug {
 		fmt.Fprintf(os.Stderr, "Time requires %.09f [s]\n", allDuration.Seconds())
 	}
 

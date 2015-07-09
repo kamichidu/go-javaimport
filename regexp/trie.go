@@ -6,18 +6,14 @@ import (
 	"strings"
 )
 
-type trie struct {
-	path map[string]*trie
-}
+type trie map[string]trie
 
-func newTrie() *trie {
-	return &trie{
-		path: make(map[string]*trie),
-	}
+func newTrie() trie {
+	return make(trie)
 }
 
 type TrieOptimizer struct {
-	path *trie
+	path trie
 }
 
 func NewTrieOptimizer() *TrieOptimizer {
@@ -30,12 +26,12 @@ func (self *TrieOptimizer) Add(pat string) {
 	t := self.path
 	for _, ch := range pat {
 		key := string(ch)
-		if _, exist := t.path[key]; !exist {
-			t.path[key] = newTrie()
+		if _, exist := t[key]; !exist {
+			t[key] = newTrie()
 		}
-		t = t.path[key]
+		t = t[key]
 	}
-	t.path["__terminal__"] = nil
+	t["__terminal__"] = nil
 }
 
 func (self *TrieOptimizer) Compile() (*regexp.Regexp, error) {
@@ -43,19 +39,23 @@ func (self *TrieOptimizer) Compile() (*regexp.Regexp, error) {
 }
 
 func (self *TrieOptimizer) Re() string {
-	if len(self.path.path) == 0 {
+	if len(self.path) == 0 {
 		// this pattern is never matched
 		return "^\\b\x00"
 	}
-	return self.re(self.path.path)
+	return self.re(self.path)
 }
 
-func (self *TrieOptimizer) re(path map[string]*trie) string {
+func (self *TrieOptimizer) re(path trie) string {
 	keys := []string{}
 	for key, _ := range path {
 		keys = append(keys, key)
 	}
 	sort.Strings(keys)
+
+	if _, hasTerminalKey := path["__terminal__"]; hasTerminalKey && len(keys) == 1 {
+		return ""
+	}
 
 	alt := []string{}
 	cc := []string{}
@@ -63,8 +63,8 @@ func (self *TrieOptimizer) re(path map[string]*trie) string {
 
 	for _, key := range keys {
 		qpat := regexp.QuoteMeta(key)
-		if nested, exist := path[key]; exist && nested != nil {
-			recurse := self.re(nested.path)
+		if key != "__terminal__" {
+			recurse := self.re(path[key])
 			if recurse != "" {
 				alt = append(alt, qpat+recurse)
 			} else {
@@ -75,6 +75,7 @@ func (self *TrieOptimizer) re(path map[string]*trie) string {
 		}
 	}
 
+	cconly := len(alt) == 0
 	if len(cc) > 0 {
 		if len(cc) == 1 {
 			alt = append(alt, cc[0])
@@ -89,7 +90,7 @@ func (self *TrieOptimizer) re(path map[string]*trie) string {
 		result = "(?:" + strings.Join(alt, "|") + ")"
 	}
 	if q {
-		if len(alt) == 0 {
+		if cconly {
 			result += "?"
 		} else {
 			result = "(?:" + result + ")?"
