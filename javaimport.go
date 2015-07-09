@@ -3,7 +3,6 @@ package main
 import (
 	"archive/zip"
 	"bufio"
-	"bytes"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -11,7 +10,7 @@ import (
 	"github.com/kamichidu/go-jclass"
 	"github.com/mattn/go-pubsub"
 	"io"
-	"io/ioutil"
+	"log"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -48,7 +47,8 @@ var (
 	excludes = &stringSet{}
 	includes = &stringSet{}
 
-	writeQueue = pubsub.New()
+	writeQueue             = pubsub.New()
+	logger     *log.Logger = nil
 )
 
 func init() {
@@ -58,6 +58,8 @@ func init() {
 	pp.ColoringEnabled = false
 
 	writeQueue.Sub(write)
+
+	logger = log.New(os.Stderr, "", log.Lshortfile|log.LstdFlags)
 }
 
 type PathFilter struct {
@@ -134,26 +136,152 @@ type CacheEntry struct {
 	Value    *TypeInfo `json:"value"`
 }
 
+type CacheBucket struct {
+	cache [256]*CacheBucket
+	value *CacheEntry
+}
+
 type Cache struct {
-	cachedir string
-	cache    map[string]map[string][]*CacheEntry
+	buckets map[string]*CacheBucket
+}
+
+func NewCache() *Cache {
+	return &Cache{
+		buckets: make(map[string]*CacheBucket),
+	}
 }
 
 func (self *Cache) MakeKey(source string) string {
 	return url.QueryEscape(source)
 }
 
-func (self *Cache) GetCache(cacheKey string, fileKey string, modtime *time.Time) *CacheEntry {
-    // TODO
-	return nil
+// cacheKey : file system key
+// filename : array key
+func (self *Cache) GetCache(cacheKey string, fileKey string, modtime time.Time) *CacheEntry {
+	bucket, exist := self.buckets[cacheKey]
+	if !exist {
+		return nil
+	}
+
+	bucket = self.findBucket(bucket, []rune(fileKey))
+	if bucket == nil {
+		return nil
+	}
+	panic(fmt.Errorf("%#v", bucket))
+	return bucket.value
 }
 
 func (self *Cache) ReadCache(cacheKey string) {
-    // TODO
+	cacheFilename := filepath.Join(*cachedir, cacheKey)
+	if _, err := os.Stat(cacheFilename); err != nil {
+		return
+	}
+
+	file, err := os.Open(cacheFilename)
+	if err != nil {
+		return
+	}
+	defer file.Close()
+
+	r := bufio.NewReader(file)
+	for {
+		line, err := r.ReadBytes('\n')
+		if err == io.EOF {
+			break
+		} else if err != nil {
+			logger.Println(err)
+			return
+		}
+
+		entry := &CacheEntry{}
+		if err := json.Unmarshal(line, entry); err == nil {
+			self.buckets[cacheKey] = self.putEntry(self.buckets[cacheKey], entry)
+		} else {
+			logger.Println(err)
+		}
+	}
 }
 
-func (self *Cache) StoreCache(cacheKey string, entry *CacheEntry) {
-    // TODO
+func (self *Cache) SaveCache(cacheKey string) {
+	bucket, exist := self.buckets[cacheKey]
+	if !exist {
+		return
+	}
+
+	if stat, err := os.Stat(*cachedir); err != nil {
+		os.MkdirAll(*cachedir, 0600)
+	} else if !stat.IsDir() {
+		logger.Printf("Expects a directory, but it's a file `%s'.", *cachedir)
+		return
+	}
+
+	filename := filepath.Join(*cachedir, cacheKey)
+	file, err := os.OpenFile(filename, os.O_CREATE|os.O_WRONLY, 0600)
+	if err != nil {
+		logger.Println(err)
+		return
+	}
+	defer file.Close()
+
+	writer := bufio.NewWriter(file)
+	defer writer.Flush()
+
+	self.writeAllBuckets(writer, bucket)
+}
+
+func (self *Cache) writeAllBuckets(w *bufio.Writer, bucket *CacheBucket) {
+	if bucket.value != nil {
+		bytes, err := json.Marshal(bucket.value)
+		if err == nil {
+			w.Write(bytes)
+			w.WriteRune('\n')
+		} else {
+			logger.Println(err)
+		}
+	}
+	for i := 0; i < len(bucket.cache); i++ {
+		if bucket.cache[i] != nil {
+			self.writeAllBuckets(w, bucket.cache[i])
+		}
+	}
+}
+
+func (self *Cache) PutCache(cacheKey string, entry *CacheEntry) {
+	self.buckets[cacheKey] = self.putEntry(self.buckets[cacheKey], entry)
+}
+
+func (self *Cache) findBucket(bucket *CacheBucket, keys []rune) *CacheBucket {
+	logger.Printf("%#v\n", bucket)
+	logger.Printf("%#v\n", string(keys))
+	for _, key := range keys {
+		if bucket == nil {
+			return nil
+		}
+		// assum each key's int value are between 0 to 255
+		idx := int(key) % len(bucket.cache)
+		bucket = bucket.cache[idx]
+	}
+	return bucket
+}
+
+func (self *Cache) putEntry(bucket *CacheBucket, entry *CacheEntry) *CacheBucket {
+	if bucket == nil {
+		bucket = &CacheBucket{}
+	}
+	rootBucket := bucket
+
+	keys := []rune(entry.Filename)
+	for _, key := range keys {
+		// assum each key's int value are between 0 to 255
+		idx := int(key) % len(bucket.cache)
+		if bucket.cache[idx] == nil {
+			bucket.cache[idx] = &CacheBucket{}
+		}
+		bucket = bucket.cache[idx]
+	}
+	bucket.value = entry
+
+	return rootBucket
 }
 
 func (self *Cache) ParseWithLfs(root string, filename string) (*TypeInfo, error) {
@@ -165,12 +293,7 @@ func (self *Cache) ParseWithLfs(root string, filename string) (*TypeInfo, error)
 	}
 
 	cacheKey := self.MakeKey(root)
-	if entry := self.GetCache(cacheKey, stat); entry != nil {
-		return entry.Value, nil
-	} else {
-		self.ReadCache(cacheKey)
-	}
-	if entry := self.GetCache(cacheKey, stat); entry != nil {
+	if entry := self.GetCache(cacheKey, filename, stat.ModTime()); entry != nil {
 		return entry.Value, nil
 	}
 
@@ -190,21 +313,16 @@ func (self *Cache) ParseWithLfs(root string, filename string) (*TypeInfo, error)
 		Modtime:  stat.ModTime().Unix(),
 		Value:    info,
 	}
-	self.StoreCache(cacheKey, entry)
+	self.PutCache(cacheKey, entry)
 
 	return entry.Value, nil
 }
 
 func (self *Cache) ParseWithJar(filename string, zf *zip.File) (*TypeInfo, error) {
 	cacheKey := self.MakeKey(filename)
-	// if entry := self.GetCache(cacheKey, zf); entry != nil {
-	// 	return entry.Value, nil
-	// } else {
-	// 	self.ReadCache(cacheKey)
-	// }
-	// if entry := self.GetCache(cacheKey, zf); entry != nil {
-	// 	return entry.Value, nil
-	// }
+	if entry := self.GetCache(cacheKey, zf.Name, zf.ModTime()); entry != nil {
+		return entry.Value, nil
+	}
 
 	r, err := zf.Open()
 	if err != nil {
@@ -222,7 +340,7 @@ func (self *Cache) ParseWithJar(filename string, zf *zip.File) (*TypeInfo, error
 		Modtime:  zf.ModTime().Unix(),
 		Value:    info,
 	}
-	self.StoreCache(cacheKey, entry)
+	self.PutCache(cacheKey, entry)
 
 	return entry.Value, err
 }
@@ -261,13 +379,6 @@ func (self *Cache) ParseFile(in io.Reader) (*TypeInfo, error) {
 		})
 	}
 	return info, nil
-}
-
-func NewCache() *Cache {
-	return &Cache{
-		cachedir: *cachedir,
-		cache:    make(map[string][]*CacheEntry),
-	}
 }
 
 func write(info *TypeInfo) {
@@ -342,12 +453,18 @@ func javaimportMain() int {
 	allStart := time.Now()
 	var wg sync.WaitGroup
 	for _, path := range flag.Args() {
+		path, err := filepath.Abs(path)
+		if err != nil {
+			panic(err)
+		}
+
 		wg.Add(1)
 		go func(path string) {
 			defer wg.Done()
 
 			fmt.Fprintf(os.Stderr, "Start %s\n", path)
 			start := time.Now()
+			cache.ReadCache(cache.MakeKey(path))
 			switch filepath.Ext(path) {
 			case ".zip":
 				fallthrough
@@ -358,6 +475,7 @@ func javaimportMain() int {
 			}
 			duration := time.Now().Sub(start)
 			fmt.Fprintf(os.Stderr, "Parsing %s requires %.09f [s]\n", path, duration.Seconds())
+			cache.SaveCache(cache.MakeKey(path))
 		}(path)
 	}
 	wg.Wait()
