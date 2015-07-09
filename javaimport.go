@@ -136,68 +136,24 @@ type CacheEntry struct {
 
 type Cache struct {
 	cachedir string
-	cache    map[string][]*CacheEntry
+	cache    map[string]map[string][]*CacheEntry
 }
 
 func (self *Cache) MakeKey(source string) string {
 	return url.QueryEscape(source)
 }
 
-type CacheFileKey interface {
-	Name() string
-	ModTime() time.Time
-}
-
-func (self *Cache) GetCache(cacheKey string, file CacheFileKey) *CacheEntry {
-	// stat, err := os.Stat(filename)
-	// if err != nil {
-	// 	return nil
-	// }
-
-	basename := filepath.Base(file.Name())
-	pp.Errorf("basename = %s\n", basename)
-	if cache, ok := self.cache[cacheKey]; ok {
-		for _, entry := range cache {
-			if entry.Filename == basename {
-				if entry.Modtime >= file.ModTime().Unix() {
-					return entry
-				}
-			}
-		}
-	}
+func (self *Cache) GetCache(cacheKey string, fileKey string, modtime *time.Time) *CacheEntry {
+    // TODO
 	return nil
 }
 
 func (self *Cache) ReadCache(cacheKey string) {
-	stat, err := os.Stat(filepath.Join(self.cachedir, cacheKey))
-	if err != nil {
-		return
-	}
-	b, err := ioutil.ReadFile(stat.Name())
-	if err != nil {
-		return
-	}
-	r := bufio.NewReader(bytes.NewReader(b))
-	for {
-		line, _, err := r.ReadLine()
-		if err == nil {
-			var data *CacheEntry
-			if json.Unmarshal(line, data) == nil {
-				self.StoreCache(cacheKey, data)
-			}
-		}
-	}
+    // TODO
 }
 
 func (self *Cache) StoreCache(cacheKey string, entry *CacheEntry) {
-	return
-	for i, old := range self.cache[cacheKey] {
-		if old.Value.Name == entry.Value.Name {
-			self.cache[cacheKey][i] = entry
-			return
-		}
-	}
-	self.cache[cacheKey] = append(self.cache[cacheKey], entry)
+    // TODO
 }
 
 func (self *Cache) ParseWithLfs(root string, filename string) (*TypeInfo, error) {
@@ -209,14 +165,14 @@ func (self *Cache) ParseWithLfs(root string, filename string) (*TypeInfo, error)
 	}
 
 	cacheKey := self.MakeKey(root)
-	// if entry := self.GetCache(cacheKey, stat); entry != nil {
-	// 	return entry.Value, nil
-	// } else {
-	// 	self.ReadCache(cacheKey)
-	// }
-	// if entry := self.GetCache(cacheKey, stat); entry != nil {
-	// 	return entry.Value, nil
-	// }
+	if entry := self.GetCache(cacheKey, stat); entry != nil {
+		return entry.Value, nil
+	} else {
+		self.ReadCache(cacheKey)
+	}
+	if entry := self.GetCache(cacheKey, stat); entry != nil {
+		return entry.Value, nil
+	}
 
 	r, err := os.Open(abspath)
 	if err != nil {
@@ -383,6 +339,7 @@ func javaimportMain() int {
 	filter := newPathFilter(excludes.set, includes.set)
 	cache := NewCache()
 
+	allStart := time.Now()
 	var wg sync.WaitGroup
 	for _, path := range flag.Args() {
 		wg.Add(1)
@@ -404,6 +361,9 @@ func javaimportMain() int {
 		}(path)
 	}
 	wg.Wait()
+	allDuration := time.Now().Sub(allStart)
+
+	fmt.Fprintf(os.Stderr, "Time requires %.09f [s]\n", allDuration.Seconds())
 
 	return 0
 }
