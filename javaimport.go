@@ -37,6 +37,7 @@ var _ flag.Value = (*stringSet)(nil)
 
 var (
 	debug    = flag.Bool("debug", false, "DEVELOPMENT OPTION")
+	profile  = flag.Bool("profile", false, "DEVELOPMENT OPTION")
 	current  = flag.String("p", "", "Current package that you're in.")
 	excludes = &stringSet{}
 	includes = &stringSet{}
@@ -217,6 +218,10 @@ func runWithLfs(path string, filter *PathFilter) {
 		}
 		relpath = strings.Replace(relpath, "\\", "/", -1)
 
+		if !filter.Apply(relpath) {
+            return nil
+		}
+
 		typeInfo, err := ParseWithLfs(path, relpath)
 		if err != nil {
 			panic(err)
@@ -239,6 +244,9 @@ func runWithJar(filename string, filter *PathFilter) {
 		if filepath.Ext(zf.Name) != ".class" {
 			continue
 		}
+		if !filter.Apply(zf.Name) {
+			continue
+		}
 
 		typeInfo, err := ParseWithJar(filename, zf)
 		if err != nil {
@@ -250,18 +258,24 @@ func runWithJar(filename string, filter *PathFilter) {
 }
 
 func javaimportMain() int {
-	f, err := os.Create("pprof.out")
-	if err != nil {
-		panic(err)
+	if *profile {
+		f, err := os.Create("pprof.out")
+		if err != nil {
+			panic(err)
+		}
+		if err := pprof.StartCPUProfile(f); err != nil {
+			panic(err)
+		}
+		defer pprof.StopCPUProfile()
 	}
-	if err := pprof.StartCPUProfile(f); err != nil {
-		panic(err)
-	}
-	defer pprof.StopCPUProfile()
 
 	flag.Parse()
 
 	filter := newPathFilter(excludes.set, includes.set)
+	if *debug {
+		fmt.Fprintf(os.Stderr, "Exclude pattern: %s\n", filter.excludePattern.String())
+		fmt.Fprintf(os.Stderr, "Include pattern: %s\n", filter.includePattern.String())
+	}
 
 	allStart := time.Now()
 	var wg sync.WaitGroup
@@ -275,7 +289,9 @@ func javaimportMain() int {
 		go func(path string) {
 			defer wg.Done()
 
-			fmt.Fprintf(os.Stderr, "Start %s\n", path)
+			if *profile {
+				fmt.Fprintf(os.Stderr, "Start %s\n", path)
+			}
 			start := time.Now()
 			switch filepath.Ext(path) {
 			case ".zip":
@@ -286,13 +302,17 @@ func javaimportMain() int {
 				runWithLfs(path, filter)
 			}
 			duration := time.Now().Sub(start)
-			fmt.Fprintf(os.Stderr, "Parsing %s requires %.09f [s]\n", path, duration.Seconds())
+			if *profile {
+				fmt.Fprintf(os.Stderr, "Parsing %s requires %.09f [s]\n", path, duration.Seconds())
+			}
 		}(path)
 	}
 	wg.Wait()
 	allDuration := time.Now().Sub(allStart)
 
-	fmt.Fprintf(os.Stderr, "Time requires %.09f [s]\n", allDuration.Seconds())
+	if *profile {
+		fmt.Fprintf(os.Stderr, "Time requires %.09f [s]\n", allDuration.Seconds())
+	}
 
 	return 0
 }
