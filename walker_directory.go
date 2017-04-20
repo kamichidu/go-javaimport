@@ -15,6 +15,8 @@ func (self *directoryWalker) Walk(c *ctx) error {
 	return filepath.Walk(self.Directory, func(path string, info os.FileInfo, err error) error {
 		if info.IsDir() {
 			return nil
+		} else if filepath.Ext(info.Name()) != ".class" {
+			return nil
 		}
 
 		class, err := jclass.NewJavaClassFromFilename(path)
