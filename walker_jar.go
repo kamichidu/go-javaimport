@@ -2,33 +2,10 @@ package main
 
 import (
 	"archive/zip"
-	"github.com/kamichidu/go-jclass"
 	"path/filepath"
-)
 
-func walkClasspath(c *ctx, path string) error {
-	errCh := make(chan error, 1)
-	go func() {
-		switch filepath.Ext(path) {
-		case ".zip", ".jar":
-			walker := &jarWalker{
-				Filename: path,
-			}
-			errCh <- walker.Walk(c)
-		default:
-			walker := &directoryWalker{
-				Directory: path,
-			}
-			errCh <- walker.Walk(c)
-		}
-	}()
-	select {
-	case <-c.Done():
-		return c.Err()
-	case err := <-errCh:
-		return err
-	}
-}
+	"github.com/kamichidu/go-jclass"
+)
 
 type jarWalker struct {
 	Filename string
@@ -63,10 +40,4 @@ func (self *jarWalker) Walk(c *ctx) error {
 	return nil
 }
 
-type directoryWalker struct {
-	Directory string
-}
-
-func (self *directoryWalker) Walk(c *ctx) error {
-	return nil
-}
+var _ walker = (*jarWalker)(nil)

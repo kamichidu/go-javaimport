@@ -5,7 +5,6 @@ import (
 	"context"
 	"flag"
 	"fmt"
-	"github.com/mattn/go-isatty"
 	"io"
 	"io/ioutil"
 	"log"
@@ -14,11 +13,53 @@ import (
 	"runtime/pprof"
 	"sync"
 	"time"
+
+	"github.com/mattn/go-isatty"
 )
 
 var (
 	appVersion = "???"
 )
+
+func walkClasspath(c *ctx, path string) error {
+	errCh := make(chan error, 1)
+	go func() {
+		var walker walker
+		switch filepath.Ext(path) {
+		case ".zip", ".jar":
+			walker = &jarWalker{
+				Filename: path,
+			}
+		default:
+			walker = &directoryWalker{
+				Directory: path,
+			}
+		}
+		errCh <- walker.Walk(c)
+	}()
+	select {
+	case <-c.Done():
+		return c.Err()
+	case err := <-errCh:
+		return err
+	}
+}
+
+func walkSourcepath(c *ctx, path string) error {
+	errCh := make(chan error, 1)
+	go func() {
+		walker := &sourceWalker{
+			Directory: path,
+		}
+		errCh <- walker.Walk(c)
+	}()
+	select {
+	case <-c.Done():
+		return c.Err()
+	case err := <-errCh:
+		return err
+	}
+}
 
 func run() int {
 	var (
