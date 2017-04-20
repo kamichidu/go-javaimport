@@ -1,0 +1,21 @@
+hash: 66c281832fdd2cd5440060cd6c89ac2e87556a54a2af6ec12826df520f4088a0
+updated: 2017-04-20T11:27:04.2398443+09:00
+imports:
+- name: github.com/k0kubun/pp
+  version: d1532fc5d94ecdf2da29e24d7b99721f3287de4a
+- name: github.com/kamichidu/go-jclass
+  version: ef6145803411e3ae9847f08ab33b0d5d88b13e53
+  subpackages:
+  - data
+  - parser/common
+  - parser/fd
+  - parser/md
+- name: github.com/mattn/go-colorable
+  version: ded68f7a9561c023e790de24279db7ebf473ea80
+- name: github.com/mattn/go-isatty
+  version: fc9e8d8ef48496124e79ae0df75490096eccf6fe
+- name: golang.org/x/sys
+  version: f3918c30c5c2cb527c0b071a27c35120a6c0719a
+  subpackages:
+  - unix
+testImports: []
