@@ -13,7 +13,10 @@ type directoryWalker struct {
 
 func (self *directoryWalker) Walk(c *ctx) error {
 	return filepath.Walk(self.Directory, func(path string, info os.FileInfo, err error) error {
-		if info.IsDir() {
+		if err != nil {
+			c.Logger().Printf("Skipping classpath directory %s:%s", path, err)
+			return filepath.SkipDir
+		} else if info.IsDir() {
 			return nil
 		} else if filepath.Ext(info.Name()) != ".class" {
 			return nil
