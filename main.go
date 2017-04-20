@@ -105,8 +105,10 @@ func run() int {
 		defer w.(*bufio.Writer).Flush()
 	}
 
-	ctx := newContext(context.Background(), newEmitter(w), logger)
+	ctx := newContext(context.Background())
 	ctx.SetVerbose(verbose)
+	ctx.SetEmitter(newJsonLinesEmitter(w))
+	ctx.SetLogger(logger)
 
 	startedAt := time.Now()
 

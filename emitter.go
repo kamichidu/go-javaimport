@@ -1,10 +1,12 @@
 package main
 
 import (
-	"encoding/json"
 	"github.com/kamichidu/go-jclass"
-	"io"
 )
+
+type emitter interface {
+	Emit(*jclass.JavaClass)
+}
 
 type typeInfo struct {
 	Package      string        `json:"package"`
@@ -98,22 +100,4 @@ func newMethodInfoFromJavaMethod(method *jclass.JavaMethod) *methodInfo {
 	info.ParameterTypes = method.ParameterTypes()
 	info.AccessFlags = accessFlagsToStringSlice(method)
 	return info
-}
-
-type emitter struct {
-	w *json.Encoder
-}
-
-func (self *emitter) Emit(class *jclass.JavaClass) {
-	// emit only importable types
-	if class.IsPrivate() || class.PackageName() == "java.lang" {
-		return
-	}
-	self.w.Encode(newTypeInfoFromJavaClass(class))
-}
-
-func newEmitter(w io.Writer) *emitter {
-	return &emitter{
-		w: json.NewEncoder(w),
-	}
 }

@@ -9,14 +9,12 @@ type ctx struct {
 	context.Context
 }
 
-func newContext(parent context.Context, emitter *emitter, logger *log.Logger) *ctx {
-	c := context.WithValue(parent, "Emitter", emitter)
-	c = context.WithValue(c, "Logger", logger)
-	return &ctx{c}
+func newContext(parent context.Context) *ctx {
+	return &ctx{parent}
 }
 
-func (self *ctx) Emitter() *emitter {
-	return self.Value("Emitter").(*emitter)
+func (self *ctx) Emitter() emitter {
+	return self.Value("Emitter").(emitter)
 }
 
 func (self *ctx) Logger() *log.Logger {
@@ -33,4 +31,12 @@ func (self *ctx) Verbose() bool {
 
 func (self *ctx) SetVerbose(v bool) {
 	self.Context = context.WithValue(self.Context, "Verbose", v)
+}
+
+func (self *ctx) SetEmitter(v emitter) {
+	self.Context = context.WithValue(self.Context, "Emitter", v)
+}
+
+func (self *ctx) SetLogger(v *log.Logger) {
+	self.Context = context.WithValue(self.Context, "Logger", v)
 }
