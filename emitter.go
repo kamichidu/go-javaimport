@@ -5,7 +5,7 @@ import (
 )
 
 type emitter interface {
-	Emit(*jclass.JavaClass)
+	Emit(*typeInfo)
 }
 
 type typeInfo struct {
@@ -19,6 +19,10 @@ type typeInfo struct {
 }
 
 func newTypeInfoFromJavaClass(class *jclass.JavaClass) *typeInfo {
+	// only emit importable
+	if class.IsPrivate() || class.PackageName() == "java.lang" {
+		return nil
+	}
 	info := new(typeInfo)
 	info.Package = class.PackageName()
 	info.SimpleName = class.SimpleName()

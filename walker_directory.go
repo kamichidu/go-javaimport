@@ -27,7 +27,7 @@ func (self *directoryWalker) Walk(c *ctx) error {
 			c.Logger().Printf("Can't create class object: %s", err)
 			return nil
 		}
-		c.Emitter().Emit(class)
+		c.Emitter().Emit(newTypeInfoFromJavaClass(class))
 		return nil
 	})
 }

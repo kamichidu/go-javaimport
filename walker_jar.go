@@ -35,7 +35,7 @@ func (self *jarWalker) Walk(c *ctx) error {
 			continue
 		}
 
-		c.Emitter().Emit(class)
+		c.Emitter().Emit(newTypeInfoFromJavaClass(class))
 	}
 	return nil
 }
