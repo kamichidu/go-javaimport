@@ -61,25 +61,26 @@ func walkSourcepath(c *ctx, path string) error {
 	}
 }
 
-func run() int {
+func run(in io.Reader, out io.Writer, errOut io.Writer, args []string) int {
 	var (
 		err         error
-		logger      = log.New(os.Stderr, "", 0x0)
+		logger      = log.New(errOut, "", 0x0)
 		usePprof    bool
 		verbose     bool
 		sourcepath  string
 		classpath   string
 		showVersion bool
 	)
+	flag := flag.NewFlagSet(args[0], flag.ExitOnError)
 	flag.StringVar(&sourcepath, "sp", "", "Source search path of directories")
 	flag.StringVar(&classpath, "cp", "", "Class search path of directories and zip/jar files")
 	flag.BoolVar(&usePprof, "pprof", false, "Execute with pprof")
 	flag.BoolVar(&verbose, "verbose", false, "Verbose mode")
 	flag.BoolVar(&showVersion, "v", false, "Show version")
-	flag.Parse()
+	flag.Parse(args[1:])
 
 	if showVersion {
-		fmt.Println(appVersion)
+		fmt.Fprintln(errOut, appVersion)
 		return 0
 	}
 	if usePprof {
@@ -98,10 +99,10 @@ func run() int {
 	}
 
 	var w io.Writer
-	if isatty.IsTerminal(os.Stdout.Fd()) {
-		w = os.Stdout
+	if f, ok := out.(*os.File); ok && isatty.IsTerminal(f.Fd()) {
+		w = out
 	} else {
-		w = bufio.NewWriter(os.Stdout)
+		w = bufio.NewWriter(out)
 		defer w.(*bufio.Writer).Flush()
 	}
 
@@ -142,5 +143,5 @@ func run() int {
 }
 
 func main() {
-	os.Exit(run())
+	os.Exit(run(os.Stdin, os.Stdout, os.Stderr, os.Args))
 }

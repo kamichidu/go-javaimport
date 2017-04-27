@@ -5,3 +5,7 @@ build:
 
 debug: build
 	./go-javaimport -cp "${JAVA_HOME}\jre\lib\rt.jar"
+
+deps:
+	go get -v golang.org/x/tools/cmd/benchcmp
+	glide install
