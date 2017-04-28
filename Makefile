@@ -15,5 +15,6 @@ debug: build
 
 .PHONY: deps
 deps:
+	go get -v github.com/Masterminds/glide
 	go get -v golang.org/x/tools/cmd/benchcmp
 	glide install
