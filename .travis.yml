@@ -1,0 +1,11 @@
+---
+language: go
+
+go:
+  - 1.8.x
+
+install:
+  - make deps
+
+script:
+  - make VERBOSE=-v test
